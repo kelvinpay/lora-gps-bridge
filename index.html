@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>LoRa GPS Bridge</title>
-<meta name="description" content="Sends this phone's GPS position to a LoRa messenger over Bluetooth LE.">
+<meta name="description" content="Sends this phone's GPS position to a LoRa messenger over Bluetooth LE, and mirrors its Messages.">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -14,15 +14,18 @@
     --bg: #f6f7f9; --card: #ffffff; --text: #0f172a; --muted: #5b6474;
     --line: #e2e5ea; --accent: #0e7c66; --accent-text: #ffffff;
     --warn: #b45309; --bad: #b91c1c; --good: #15803d;
+    --bubble-in: #eef1f5; --bubble-out: #d9f2ea;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b1120; --card: #131b2e; --text: #e5e9f0; --muted: #94a0b4;
       --line: #24304a; --accent: #2bb596; --accent-text: #04221b;
       --warn: #f0a94b; --bad: #f87171; --good: #4ade80;
+      --bubble-in: #1c2740; --bubble-out: #12392f;
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -37,9 +40,10 @@
   .row span:first-child { color: var(--muted); }
   .row span:last-child { font-variant-numeric: tabular-nums; text-align: right; word-break: break-all; }
   button {
-    width: 100%; font: inherit; font-weight: 600; padding: 14px; border-radius: 12px;
+    font: inherit; font-weight: 600; padding: 14px; border-radius: 12px;
     border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text);
   }
+  .buttons button { width: 100%; }
   button.secondary { background: transparent; color: var(--accent); }
   button:disabled { opacity: .45; }
   .buttons { display: grid; gap: 10px; }
@@ -47,18 +51,44 @@
   .ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
   #log { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--muted); max-height: 160px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
   .note { font-size: .85rem; color: var(--muted); margin: 0; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+  .tabs button { padding: 10px; border: 0; background: transparent; color: var(--muted); border-radius: 9px; }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
+  .badge { display: inline-block; min-width: 1.4em; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--bad); color: #fff; font-size: .75rem; line-height: 1.4em; }
+  #chat { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; min-height: 160px; overflow-y: auto; padding: 2px; }
+  .msg { max-width: 82%; padding: 8px 11px; border-radius: 14px; word-wrap: break-word; white-space: pre-wrap; }
+  .msg.in { align-self: flex-start; background: var(--bubble-in); border-bottom-left-radius: 4px; }
+  .msg.out { align-self: flex-end; background: var(--bubble-out); border-bottom-right-radius: 4px; }
+  .meta { display: block; margin-top: 3px; font-size: .75rem; color: var(--muted); }
+  .empty { color: var(--muted); text-align: center; margin: auto; font-size: .9rem; }
+  .compose { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; align-items: end; }
+  textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px; resize: none; min-height: 48px; width: 100%; }
+  .compose button { padding: 12px 16px; }
+  .counter { font-size: .75rem; color: var(--muted); grid-column: 1 / -1; margin-top: -4px; }
+  .quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .quick button { padding: 6px 12px; font-size: .85rem; font-weight: 500; border-radius: 999px; background: transparent; color: var(--accent); }
 </style>
 </head>
 <body>
 <main>
   <header>
     <h1>LoRa GPS Bridge</h1>
-    <p class="sub">Sends this phone's position to your messenger over Bluetooth. Keep this page open with the screen on.</p>
+    <p class="sub">Sends this phone's position to your messenger over Bluetooth and mirrors its Messages. Keep this page open with the screen on.</p>
   </header>
 
   <div id="support" class="card" hidden></div>
 
-  <section class="card">
+  <div class="buttons">
+    <button id="connect">Connect to messenger</button>
+    <button id="disconnect" class="secondary" hidden>Disconnect</button>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button id="tab-gps" role="tab" aria-selected="true">GPS</button>
+    <button id="tab-msg" role="tab" aria-selected="false">Messages<span id="unread" class="badge" hidden>0</span></button>
+  </nav>
+
+  <section id="panel-gps" class="card">
     <div class="row"><span>Board</span><span id="board"><span class="pill warn">Not connected</span></span></div>
     <div class="row"><span>GPS</span><span id="gps"><span class="pill warn">Off</span></span></div>
     <div class="row"><span>Latitude</span><span id="lat">–</span></div>
@@ -70,10 +100,16 @@
     <div class="row"><span>Board says</span><span id="status">–</span></div>
   </section>
 
-  <div class="buttons">
-    <button id="connect">Connect to messenger</button>
-    <button id="disconnect" class="secondary" hidden>Disconnect</button>
-  </div>
+  <section id="panel-msg" class="card" hidden>
+    <p id="chat-state" class="note" style="margin-bottom:8px">Connect to a board to see its messages.</p>
+    <div id="chat"><p class="empty">No messages yet</p></div>
+    <form id="compose" class="compose">
+      <textarea id="text" rows="2" placeholder="Type a message" maxlength="240" disabled></textarea>
+      <button id="send" type="submit" disabled>Send</button>
+      <span id="counter" class="counter">0 / 120 bytes</span>
+    </form>
+    <div id="quick" class="quick"></div>
+  </section>
 
   <section class="card">
     <pre id="log"></pre>
@@ -84,15 +120,23 @@
 
 <script>
 "use strict";
-// Must match firmware/ble_gps.h
+// ---- Must match firmware ble_gps.h ----
 const SERVICE_UUID  = "8f1b0001-5a6e-4c3b-9d2a-1e47c0a1b2c3";
 const LOCATION_UUID = "8f1b0002-5a6e-4c3b-9d2a-1e47c0a1b2c3";
 const STATUS_UUID   = "8f1b0003-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+// ---- Must match firmware ble_chat (docs/BLUETOOTH-GPS.md section 8a) ----
+const CHAT_SVC_UUID = "8f1b0101-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+const CHAT_SEND_UUID = "8f1b0102-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+const CHAT_UPD_UUID  = "8f1b0103-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+const CHAT_SYNC_UUID = "8f1b0104-5a6e-4c3b-9d2a-1e47c0a1b2c3";
 const PACKET_VERSION = 1;
+const MAX_TEXT_BYTES = 120;
 const MIN_SEND_MS = 2000;   // at most one fix every 2 s
 const RESEND_MS   = 10000;  // resend the last fix every 10 s even if unchanged
+const QUICK_MESSAGES = ["OK", "On my way", "Where are you?", "Checking in", "Signal test", "Need help"];
 
 const $ = (id) => document.getElementById(id);
+const enc = new TextEncoder(), dec = new TextDecoder();
 let device = null, locChar = null, watchId = null, wakeLock = null;
 let lastFix = null, lastSentAt = 0, sentCount = 0, sending = false, userDisconnect = false;
 
@@ -115,12 +159,28 @@ function pill(id, text, cls) {
   if (!navigator.geolocation) problems.push("This browser has no location access.");
   if (problems.length) {
     $("support").hidden = false;
-    $("support").innerHTML = problems.map(p => `<p class="bad" style="margin:0">${p}</p>`).join("");
+    $("support").replaceChildren(...problems.map(p => { const e = document.createElement("p"); e.className = "bad"; e.style.margin = "0"; e.textContent = p; return e; }));
     $("connect").disabled = !navigator.bluetooth;
   }
 })();
 
-// ---- packet: 19 bytes, little-endian ----
+// ---- tabs ----
+let activeTab = "gps";
+function showTab(name) {
+  activeTab = name;
+  $("tab-gps").setAttribute("aria-selected", name === "gps");
+  $("tab-msg").setAttribute("aria-selected", name === "msg");
+  $("panel-gps").hidden = name !== "gps";
+  $("panel-msg").hidden = name !== "msg";
+  if (name === "msg") { unread = 0; updateUnread(); scrollChat(); }
+  try { localStorage.setItem("tab", name); } catch (e) {}
+}
+$("tab-gps").addEventListener("click", () => showTab("gps"));
+$("tab-msg").addEventListener("click", () => showTab("msg"));
+try { if (localStorage.getItem("tab") === "msg") showTab("msg"); } catch (e) {}
+
+// ================= GPS =================
+// packet: 19 bytes, little-endian
 // u8 version | i32 lat*1e7 | i32 lon*1e7 | i16 alt m (-32768 = unknown)
 // u16 accuracy dm (65535 = >=6553.5 m) | u16 speed cm/s (65535 = unknown) | u32 fix unix time s
 function encodeFix(f) {
@@ -154,7 +214,6 @@ async function sendFix(force = false) {
 }
 setInterval(() => { if (lastFix && Date.now() - lastSentAt >= RESEND_MS) sendFix(true); }, 1000);
 
-// ---- GPS ----
 function startGps() {
   if (watchId != null || !navigator.geolocation) return;
   pill("gps", "Waiting for fix", "warn");
@@ -177,6 +236,140 @@ function stopGps() {
   watchId = null; pill("gps", "Off", "warn");
 }
 
+// ================= Messages =================
+const STATUS_TEXT = ["Sending…", "Delivered", "Unconfirmed", "Received"];
+let chatSend = null, chatSync = null, chatReady = false, syncing = false;
+let messages = new Map();   // msg_id -> record
+let pending = new Map();    // client_id -> {text, failed, at}
+let nextClientId = (Date.now() & 0x7fff) + 1;
+let unread = 0;
+
+function updateUnread() {
+  $("unread").hidden = unread === 0;
+  $("unread").textContent = unread > 99 ? "99+" : unread;
+}
+function scrollChat() { const c = $("chat"); c.scrollTop = c.scrollHeight; }
+
+function parseRecord(dv) {
+  if (dv.byteLength < 16 || dv.getUint8(0) !== 1) return null;
+  const len = Math.min(dv.getUint8(15), dv.byteLength - 16);
+  return {
+    id: dv.getUint16(1, true), clientId: dv.getUint16(3, true),
+    dir: dv.getUint8(5), status: dv.getUint8(6), peer: dv.getUint16(7, true),
+    rssi: dv.getInt16(9, true), time: dv.getUint32(11, true),
+    text: dec.decode(new Uint8Array(dv.buffer, dv.byteOffset + 16, len))
+  };
+}
+
+function onChatUpdate(ev) {
+  const r = parseRecord(ev.target.value);
+  if (!r) return;
+  if (r.id === 0xFFFF) {           // end of history replay
+    syncing = false;
+    $("chat-state").textContent = `Synced ${messages.size} message${messages.size === 1 ? "" : "s"} from ${device && device.name || "board"}.`;
+    renderChat(); return;
+  }
+  const isNew = !messages.has(r.id);
+  messages.set(r.id, r);
+  if (r.clientId) pending.delete(r.clientId);
+  if (isNew && !syncing && r.dir === 1 && activeTab !== "msg") { unread++; updateUnread(); }
+  if (!syncing) renderChat();
+}
+
+function bubble(cls, text, meta) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.textContent = text;
+  const m = document.createElement("span");
+  m.className = "meta"; m.textContent = meta;
+  d.appendChild(m);
+  return d;
+}
+
+function renderChat() {
+  const c = $("chat");
+  const nearBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+  const list = [...messages.values()].sort((a, b) => a.id - b.id);
+  const nodes = list.map(r => {
+    const parts = [];
+    if (r.time) parts.push(new Date(r.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    if (r.dir === 1) parts.push("from " + r.peer.toString(16).toUpperCase().padStart(4, "0"));
+    parts.push(STATUS_TEXT[r.status] || "?");
+    if (r.rssi !== -32768) parts.push(`${r.rssi} dBm`);
+    return bubble(r.dir === 1 ? "in" : "out", r.text, parts.join(" · "));
+  });
+  for (const p of pending.values()) nodes.push(bubble("out", p.text, p.failed ? "Not sent to board" : "Sending to board…"));
+  if (!nodes.length) { const e = document.createElement("p"); e.className = "empty"; e.textContent = "No messages yet"; nodes.push(e); }
+  c.replaceChildren(...nodes);
+  if (nearBottom || activeTab === "msg") scrollChat();
+}
+
+function setChatEnabled(on) {
+  chatReady = on;
+  $("text").disabled = !on; $("send").disabled = !on || !$("text").value.trim();
+  for (const b of $("quick").children) b.disabled = !on;
+}
+
+function updateCounter() {
+  const n = enc.encode($("text").value).length;
+  $("counter").textContent = `${n} / ${MAX_TEXT_BYTES} bytes`;
+  $("counter").className = "counter" + (n > MAX_TEXT_BYTES ? " bad" : "");
+  $("send").disabled = !chatReady || n === 0 || n > MAX_TEXT_BYTES || !$("text").value.trim();
+}
+$("text").addEventListener("input", updateCounter);
+$("text").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("compose").requestSubmit(); } });
+
+async function sendChat(text) {
+  text = text.trim();
+  const bytes = enc.encode(text);
+  if (!chatReady || !bytes.length || bytes.length > MAX_TEXT_BYTES) return false;
+  const id = nextClientId; nextClientId = (nextClientId % 0xFFFE) + 1;
+  const buf = new Uint8Array(3 + bytes.length);
+  buf[0] = 1; buf[1] = id & 0xff; buf[2] = id >> 8; buf.set(bytes, 3);
+  pending.set(id, { text, failed: false, at: Date.now() });
+  renderChat();
+  try {
+    await chatSend.writeValue(buf);   // with response: the board confirms it queued it
+    return true;
+  } catch (e) {
+    const p = pending.get(id); if (p) p.failed = true;
+    log("Message not sent to board: " + e.message);
+    renderChat();
+    return false;
+  }
+}
+$("compose").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const t = $("text").value;
+  if (await sendChat(t)) { $("text").value = ""; updateCounter(); }
+});
+for (const q of QUICK_MESSAGES) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = q; b.disabled = true;
+  b.addEventListener("click", () => sendChat(q));
+  $("quick").appendChild(b);
+}
+
+async function connectChat(server) {
+  try {
+    const svc = await server.getPrimaryService(CHAT_SVC_UUID);
+    chatSend = await svc.getCharacteristic(CHAT_SEND_UUID);
+    chatSync = await svc.getCharacteristic(CHAT_SYNC_UUID);
+    const upd = await svc.getCharacteristic(CHAT_UPD_UUID);
+    upd.addEventListener("characteristicvaluechanged", onChatUpdate);
+    await upd.startNotifications();
+    messages = new Map(); syncing = true;
+    $("chat-state").textContent = "Loading messages from the board…";
+    setChatEnabled(true);
+    await chatSync.writeValue(new Uint8Array([1]));
+    setTimeout(() => { if (syncing) { syncing = false; renderChat(); } }, 5000);
+  } catch (e) {
+    chatSend = chatSync = null; setChatEnabled(false);
+    $("chat-state").textContent = "This board's firmware has no phone Messages yet (needs 0.9.11 or later). GPS still works.";
+    log("Messages unavailable: " + e.message);
+  }
+}
+
 // ---- keep the screen on (where supported) ----
 async function keepAwake() {
   try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } }
@@ -184,7 +377,7 @@ async function keepAwake() {
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && device) keepAwake(); });
 
-// ---- Bluetooth ----
+// ================= Bluetooth =================
 async function connectGatt() {
   pill("board", "Connecting…", "warn");
   const server = await device.gatt.connect();
@@ -193,18 +386,20 @@ async function connectGatt() {
   try {
     const st = await svc.getCharacteristic(STATUS_UUID);
     st.addEventListener("characteristicvaluechanged", (ev) => {
-      $("status").textContent = new TextDecoder().decode(ev.target.value);
+      $("status").textContent = dec.decode(ev.target.value);
     });
     await st.startNotifications();
-    $("status").textContent = new TextDecoder().decode(await st.readValue());
+    $("status").textContent = dec.decode(await st.readValue());
   } catch (e) { log("Status unavailable: " + e.message); }
   pill("board", device.name || "Connected", "ok");
   log("Connected to " + (device.name || "board"));
   sendFix(true);
+  await connectChat(server);
 }
 
 async function onDisconnected() {
-  locChar = null;
+  locChar = null; chatSend = chatSync = null; setChatEnabled(false);
+  $("chat-state").textContent = "Disconnected. Messages will resync when the board reconnects.";
   pill("board", "Disconnected", "bad");
   if (userDisconnect) return;
   log("Link lost, retrying…");
@@ -222,7 +417,7 @@ $("connect").addEventListener("click", async () => {
     startGps();       // ask for location in the same tap (needed on iPhone)
     device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }, { namePrefix: "LoRaMsg" }],
-      optionalServices: [SERVICE_UUID]
+      optionalServices: [SERVICE_UUID, CHAT_SVC_UUID]
     });
     device.addEventListener("gattserverdisconnected", onDisconnected);
     await connectGatt();
@@ -237,10 +432,11 @@ $("connect").addEventListener("click", async () => {
 $("disconnect").addEventListener("click", () => {
   userDisconnect = true;
   if (device && device.gatt.connected) device.gatt.disconnect();
-  device = null; locChar = null; stopGps();
+  device = null; locChar = null; chatSend = chatSync = null; setChatEnabled(false); stopGps();
   if (wakeLock) wakeLock.release();
   $("connect").hidden = false; $("disconnect").hidden = true;
   pill("board", "Not connected", "warn");
+  $("chat-state").textContent = "Connect to a board to see its messages.";
 });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

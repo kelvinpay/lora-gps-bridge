@@ -1,6 +1,6 @@
 # LoRa GPS Bridge
 
-A small web page that sends a phone's GPS position to an ESP32-S3 LoRa messenger over Bluetooth Low Energy.
+A small web page that sends a phone's GPS position to an ESP32-S3 LoRa messenger over Bluetooth Low Energy, and mirrors the messenger's Messages (firmware 0.9.11 or later).
 
 Live page: https://kelvinpay.github.io/lora-gps-bridge/
 
@@ -32,6 +32,18 @@ Fix packet, little-endian:
 | 11 | u16 | accuracy in 0.1 m (65535 = 6553.5 m or worse) |
 | 13 | u16 | speed cm/s (65535 = unknown) |
 | 15 | u32 | fix time, Unix seconds UTC |
+
+## Messages protocol (firmware 0.9.11+)
+
+Service `8f1b0101-5a6e-4c3b-9d2a-1e47c0a1b2c3`
+
+| Characteristic | UUID | Properties | Content |
+| --- | --- | --- | --- |
+| Send | `8f1b0102-5a6e-4c3b-9d2a-1e47c0a1b2c3` | write | `[u8 version=1][u16 client_id][UTF-8 text 1-120 bytes]` |
+| Updates | `8f1b0103-5a6e-4c3b-9d2a-1e47c0a1b2c3` | read, notify | one message record per notify |
+| Sync | `8f1b0104-5a6e-4c3b-9d2a-1e47c0a1b2c3` | write | `[0x01]` replays all stored messages, then an end marker |
+
+Message record, little-endian: u8 version=1, u16 msg_id (0xFFFF = end of sync), u16 client_id, u8 direction (0 out, 1 in), u8 status (0 Sending, 1 Delivered, 2 Unconfirmed, 3 Received), u16 peer short ID, i16 RSSI dBm (-32768 unknown), u32 Unix time s (0 unknown), u8 text length, then the text.
 
 ## Files
 

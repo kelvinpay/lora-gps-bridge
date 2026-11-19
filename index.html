@@ -102,6 +102,7 @@
 
   <section id="panel-msg" class="card" hidden>
     <p id="chat-state" class="note" style="margin-bottom:8px">Connect to a board to see its messages.</p>
+    <button id="chat-retry" type="button" class="secondary" style="width:100%;margin-bottom:10px" hidden>Pair and load Messages</button>
     <div id="chat"><p class="empty">No messages yet</p></div>
     <form id="compose" class="compose">
       <textarea id="text" rows="2" placeholder="Type a message" maxlength="240" disabled></textarea>
@@ -341,7 +342,7 @@ async function sendChat(text) {
     return true;
   } catch (e) {
     const p = pending.get(id); if (p) p.failed = true;
-    log("Message not sent to board: " + e.message);
+    log("Message not sent to board: " + e.message + " (if the board asks, pair with the code on its screen)");
     renderChat();
     return false;
   }
@@ -359,6 +360,7 @@ for (const q of QUICK_MESSAGES) {
 }
 
 async function connectChat(server) {
+  $("chat-retry").hidden = true;
   try {
     const svc = await server.getPrimaryService(CHAT_SVC_UUID);
     chatSend = await svc.getCharacteristic(CHAT_SEND_UUID);
@@ -373,7 +375,12 @@ async function connectChat(server) {
     setTimeout(() => { if (syncing) { syncing = false; renderChat(); } }, 5000);
   } catch (e) {
     chatSend = chatSync = null; setChatEnabled(false);
-    $("chat-state").textContent = "This board's firmware has no phone Messages yet (needs 0.9.11 or later). GPS still works.";
+    if (e.name === "NotFoundError") {
+      $("chat-state").textContent = "This board's firmware has no phone Messages yet (needs 0.9.11 or later). GPS still works.";
+    } else {
+      $("chat-state").textContent = "Messages need pairing. When your phone asks for a PIN, enter the 6-digit code shown on the board's screen. If it keeps failing, remove the board from your phone's Bluetooth settings and tap \"Forget paired phones\" on the board's Diagnostics tab, then try again.";
+      $("chat-retry").hidden = false;
+    }
     log("Messages unavailable: " + e.message);
   }
 }
@@ -445,6 +452,10 @@ $("disconnect").addEventListener("click", () => {
   $("connect").hidden = false; $("disconnect").hidden = true;
   pill("board", "Not connected", "warn");
   $("chat-state").textContent = "Connect to a board to see its messages.";
+});
+
+$("chat-retry").addEventListener("click", () => {
+  if (device && device.gatt.connected) connectChat(device.gatt);
 });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

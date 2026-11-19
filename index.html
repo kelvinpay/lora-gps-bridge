@@ -38,7 +38,7 @@
   .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
   .row:last-child { border-bottom: 0; }
   .row span:first-child { color: var(--muted); }
-  .row span:last-child { font-variant-numeric: tabular-nums; text-align: right; word-break: break-all; }
+  .row span:last-child { font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
   button {
     font: inherit; font-weight: 600; padding: 14px; border-radius: 12px;
     border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text);
@@ -51,7 +51,7 @@
   .ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
   #log { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--muted); max-height: 160px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
   .note { font-size: .85rem; color: var(--muted); margin: 0; }
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
   .tabs button { padding: 10px; border: 0; background: transparent; color: var(--muted); border-radius: 9px; }
   .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
   .badge { display: inline-block; min-width: 1.4em; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--bad); color: #fff; font-size: .75rem; line-height: 1.4em; }
@@ -66,6 +66,20 @@
   .compose button { padding: 12px 16px; }
   .counter { font-size: .75rem; color: var(--muted); grid-column: 1 / -1; margin-top: -4px; }
   .quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .countdown { font-size: 2.6rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
+  .cd-sub { text-align: center; color: var(--muted); font-size: .9rem; margin: 0 0 10px; }
+  .ctl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .ctl button { padding: 12px; }
+  .inline { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .inline input[type=number] { font: inherit; width: 5.5em; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); text-align: center; }
+  .inline button { padding: 10px 14px; }
+  .inline label { flex: 1; color: var(--muted); }
+  select { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .peer { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
+  .peer h3 { margin: 0 0 4px; font-size: 1rem; display: flex; justify-content: space-between; gap: 8px; }
+  .peer .big { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .peer .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .peer .grid span:nth-child(odd) { color: var(--muted); }
   .quick button { padding: 6px 12px; font-size: .85rem; font-weight: 500; border-radius: 999px; background: transparent; color: var(--accent); }
 </style>
 </head>
@@ -86,6 +100,7 @@
   <nav class="tabs" role="tablist">
     <button id="tab-gps" role="tab" aria-selected="true">GPS</button>
     <button id="tab-msg" role="tab" aria-selected="false">Messages<span id="unread" class="badge" hidden>0</span></button>
+    <button id="tab-range" role="tab" aria-selected="false">Range</button>
   </nav>
 
   <section id="panel-gps" class="card">
@@ -110,6 +125,47 @@
       <span id="counter" class="counter">0 / 120 bytes</span>
     </form>
     <div id="quick" class="quick"></div>
+  </section>
+
+  <section id="panel-range" class="card" hidden>
+    <p id="range-state" class="note" style="margin-bottom:8px">Connect to a board to control the coverage test (firmware 0.9.18 or later).</p>
+    <button id="range-retry" type="button" class="secondary" style="width:100%;margin-bottom:10px" hidden>Pair and load Range</button>
+    <div class="row"><span>Test</span><span id="r-status"><span class="pill warn">Not connected</span></span></div>
+    <div id="r-cd" class="countdown">–</div>
+    <p id="r-cdsub" class="cd-sub">&nbsp;</p>
+    <div class="ctl">
+      <button id="r-start" type="button" disabled>Start</button>
+      <button id="r-stop" type="button" class="secondary" disabled>Stop</button>
+    </div>
+    <div class="inline">
+      <label for="r-int">Every (s)</label>
+      <button id="r-minus" type="button" class="secondary" disabled>−5</button>
+      <input id="r-int" type="number" inputmode="numeric" min="5" max="600" step="5" value="30" disabled>
+      <button id="r-plus" type="button" class="secondary" disabled>+5</button>
+      <button id="r-set" type="button" disabled>Set</button>
+    </div>
+    <div class="inline">
+      <label for="r-reply">Auto-reply to other boards</label>
+      <input id="r-reply" type="checkbox" disabled style="width:24px;height:24px">
+    </div>
+    <div class="inline">
+      <label for="r-power">Power</label>
+      <select id="r-power" disabled><option value="0">Fixed</option><option value="1">Sweep</option></select>
+    </div>
+    <div class="ctl">
+      <button id="r-pin" type="button" class="secondary" disabled>Pin here</button>
+      <button id="r-mark" type="button" class="secondary" disabled>MARK</button>
+    </div>
+    <div id="r-peers"><p class="empty">No other boards heard yet</p></div>
+    <div style="margin-top:10px">
+      <div class="row"><span>Run / probe</span><span id="r-run">–</span></div>
+      <div class="row"><span>Sent / OK / missed</span><span id="r-tot">–</span></div>
+      <div class="row"><span>Held (duty limit)</span><span id="r-held">–</span></div>
+      <div class="row"><span>Furthest with a reply</span><span id="r-far">–</span></div>
+      <div class="row"><span>Duty this hour</span><span id="r-duty">–</span></div>
+      <div class="row"><span>TX power</span><span id="r-tx">–</span></div>
+      <div class="row"><span>Board GPS</span><span id="r-gps">–</span></div>
+    </div>
   </section>
 
   <section class="card">
@@ -179,14 +235,17 @@ function showTab(name) {
   activeTab = name;
   $("tab-gps").setAttribute("aria-selected", name === "gps");
   $("tab-msg").setAttribute("aria-selected", name === "msg");
+  $("tab-range").setAttribute("aria-selected", name === "range");
   $("panel-gps").hidden = name !== "gps";
   $("panel-msg").hidden = name !== "msg";
+  $("panel-range").hidden = name !== "range";
   if (name === "msg") { unread = 0; updateUnread(); scrollChat(); }
   try { localStorage.setItem("tab", name); } catch (e) {}
 }
 $("tab-gps").addEventListener("click", () => showTab("gps"));
 $("tab-msg").addEventListener("click", () => showTab("msg"));
-try { if (localStorage.getItem("tab") === "msg") showTab("msg"); } catch (e) {}
+$("tab-range").addEventListener("click", () => showTab("range"));
+try { const t = localStorage.getItem("tab"); if (t === "msg" || t === "range") showTab(t); } catch (e) {}
 
 // ================= GPS =================
 // packet: 19 bytes, little-endian
@@ -385,6 +444,164 @@ async function connectChat(server) {
   }
 }
 
+// ================= Range (coverage test, firmware 0.9.18+, docs/RANGE-TEST.md section 9) =================
+const RANGE_SVC_UUID   = "8f1b0201-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+const RANGE_STATE_UUID = "8f1b0202-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+const RANGE_PEER_UUID  = "8f1b0203-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+const RANGE_CTRL_UUID  = "8f1b0204-5a6e-4c3b-9d2a-1e47c0a1b2c3";
+const R_CMD = { start: 1, stop: 2, interval: 3, reply: 4, pin: 5, unpin: 6, sync: 7, power: 8, slots: 9, mark: 10 };
+let rangeCtrl = null, rState = null, rStateAt = 0, rPeers = new Map(), rTimer = null, rIntDirty = false;
+
+function parseRangeState(dv) {
+  if (dv.byteLength < 34 || dv.getUint8(0) !== 1) return null;
+  const f = dv.getUint8(1);
+  return {
+    running: !!(f & 1), reply: !!(f & 2), pinned: !!(f & 4), waiting: !!(f & 8), radioLive: !!(f & 16),
+    run: dv.getUint16(2, true), probe: dv.getUint16(4, true),
+    interval: dv.getUint16(6, true), minInterval: dv.getUint16(8, true), nextDs: dv.getUint16(10, true),
+    sent: dv.getUint16(12, true), replies: dv.getUint16(14, true), miss: dv.getUint16(16, true), held: dv.getUint16(18, true),
+    furthest: dv.getInt32(20, true), dutyPct: dv.getUint16(24, true) / 100, dutyLimit: dv.getUint16(26, true) / 10,
+    tx: dv.getInt8(28), power: dv.getUint8(29), slots: dv.getUint8(30), boards: dv.getUint8(31), gps: dv.getUint8(32)
+  };
+}
+function parseRangePeer(dv) {
+  if (dv.byteLength < 24 || dv.getUint8(0) !== 1) return null;
+  return {
+    answered: !!(dv.getUint8(1) & 1), id: dv.getUint16(2, true), ok: dv.getUint16(4, true), miss: dv.getUint16(6, true),
+    dist: dv.getInt32(8, true), rssiThere: dv.getInt16(12, true), rssiHere: dv.getInt16(14, true),
+    marginThere: dv.getInt8(16), marginHere: dv.getInt8(17), ago: dv.getUint16(18, true), rtt: dv.getUint16(20, true),
+    at: Date.now()
+  };
+}
+const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, "0");
+const fmtDist = (m) => m < 0 ? "–" : m < 1000 ? `${m} m` : `${(m / 1000).toFixed(2)} km`;
+const fmtDbm = (v) => v === -32768 ? "–" : `${v} dBm`;
+const fmtDb = (v) => v === -128 ? "–" : `${v} dB`;
+
+function setRangeEnabled(on) {
+  for (const id of ["r-start", "r-stop", "r-minus", "r-plus", "r-set", "r-int", "r-reply", "r-power", "r-pin", "r-mark"]) $(id).disabled = !on;
+  if (on && rState) applyRangeState();
+  if (!on) { pill("r-status", "Not connected", "warn"); $("r-cd").textContent = "–"; $("r-cdsub").innerHTML = "&nbsp;"; }
+}
+
+function applyRangeState() {
+  const s = rState; if (!s) return;
+  if (s.running) pill("r-status", s.waiting ? "Running, waiting for replies" : "Running", "ok");
+  else pill("r-status", s.radioLive ? "Stopped" : "Stopped, radio not live", s.radioLive ? "warn" : "bad");
+  $("r-start").disabled = !rangeCtrl || s.running;
+  $("r-stop").disabled = !rangeCtrl || !s.running;
+  $("r-power").disabled = !rangeCtrl || s.running;
+  $("r-power").value = String(s.power);
+  $("r-reply").checked = s.reply;
+  const inp = $("r-int");
+  inp.min = String(Math.max(1, s.minInterval));
+  if (!rIntDirty && document.activeElement !== inp) inp.value = String(s.interval);
+  $("r-pin").textContent = s.pinned ? "Unpin" : "Pin here";
+  $("r-run").textContent = s.run ? `${s.run} / ${s.probe}` : "–";
+  $("r-tot").textContent = `${s.sent} / ${s.replies} / ${s.miss}` + (s.sent ? ` (${Math.round(100 * s.miss / s.sent)}% lost)` : "");
+  $("r-held").textContent = String(s.held);
+  $("r-far").textContent = fmtDist(s.furthest);
+  $("r-duty").textContent = `${s.dutyPct.toFixed(2)}%` + (s.dutyLimit ? ` of ${s.dutyLimit}%` : " (no limit)");
+  $("r-tx").textContent = `${s.tx} dBm, ${s.power ? "sweep" : "fixed"}, ${s.slots} reply slots`;
+  $("r-gps").textContent = ["none", "phone", "pinned"][s.gps] || "–";
+  $("r-cdsub").textContent = `Interval ${s.interval} s (minimum ${s.minInterval} s)`;
+  tickCountdown();
+}
+
+function tickCountdown() {
+  const s = rState; if (!s || !rangeCtrl) return;
+  if (!s.running) { $("r-cd").textContent = "Stopped"; return; }
+  if (s.waiting || !s.nextDs) { $("r-cd").textContent = "Listening…"; return; }
+  const left = Math.max(0, s.nextDs / 10 - (Date.now() - rStateAt) / 1000);
+  $("r-cd").textContent = `${Math.ceil(left)} s`;
+}
+
+function renderPeers() {
+  const box = $("r-peers");
+  if (!rPeers.size) { box.innerHTML = '<p class="empty">No other boards heard yet</p>'; return; }
+  const list = [...rPeers.values()].sort((a, b) => a.id - b.id);
+  box.replaceChildren(...list.map(p => {
+    const d = document.createElement("div"); d.className = "peer";
+    const total = p.ok + p.miss;
+    const ago = p.ago === 0xFFFF ? "never" : `${p.ago + Math.floor((Date.now() - p.at) / 1000)} s ago`;
+    d.innerHTML = `<h3><span>${hex4(p.id)}</span><span class="pill ${p.answered ? "ok" : "bad"}">${p.answered ? "Reply OK" : "No reply"}</span></h3>
+      <div class="big">${fmtDist(p.dist)}</div>
+      <div class="grid">
+        <span>Signal there</span><span>${fmtDbm(p.rssiThere)} (${fmtDb(p.marginThere)})</span>
+        <span>Signal here</span><span>${fmtDbm(p.rssiHere)} (${fmtDb(p.marginHere)})</span>
+        <span>OK / missed</span><span>${p.ok} / ${p.miss}${total ? ` (${Math.round(100 * p.ok / total)}%)` : ""}</span>
+        <span>Round trip</span><span>${p.rtt === 0xFFFF ? "–" : (p.rtt / 1000).toFixed(2) + " s"}</span>
+        <span>Last heard</span><span>${ago}</span>
+      </div>`;
+    return d;
+  }));
+}
+
+async function rangeCmd(cmd, arg = 0) {
+  if (!rangeCtrl) return;
+  const b = new Uint8Array(6), v = new DataView(b.buffer);
+  v.setUint8(0, 1); v.setUint8(1, cmd); v.setUint32(2, arg >>> 0, true);
+  const c = rangeCtrl;
+  try { await gatt(() => c.writeValue(b)); }
+  catch (e) { log("Range command failed: " + e.message); }
+}
+
+function intervalValue() {
+  const min = rState ? Math.max(1, rState.minInterval) : 5;
+  let v = Math.round(Number($("r-int").value) || 0);
+  if (v < min) v = min; if (v > 600) v = 600;
+  $("r-int").value = String(v);
+  return v;
+}
+
+async function connectRange(server) {
+  $("range-retry").hidden = true;
+  try {
+    const svc = await server.getPrimaryService(RANGE_SVC_UUID);
+    rangeCtrl = await svc.getCharacteristic(RANGE_CTRL_UUID);
+    const st = await svc.getCharacteristic(RANGE_STATE_UUID);
+    const pe = await svc.getCharacteristic(RANGE_PEER_UUID);
+    st.addEventListener("characteristicvaluechanged", (ev) => {
+      const s = parseRangeState(ev.target.value); if (s) { rState = s; rStateAt = Date.now(); applyRangeState(); }
+    });
+    pe.addEventListener("characteristicvaluechanged", (ev) => {
+      const p = parseRangePeer(ev.target.value); if (p) { rPeers.set(p.id, p); renderPeers(); }
+    });
+    await st.startNotifications();
+    await pe.startNotifications();
+    rPeers = new Map(); renderPeers();
+    setRangeEnabled(true);
+    $("range-state").textContent = "Controls work like the buttons on the board's Range tab. Starting a test makes the board transmit.";
+    await rangeCmd(R_CMD.sync);
+    if (!rTimer) rTimer = setInterval(() => { tickCountdown(); if (rPeers.size) renderPeers(); }, 1000);
+  } catch (e) {
+    rangeCtrl = null; setRangeEnabled(false);
+    if (e.name === "NotFoundError") {
+      $("range-state").textContent = "This board's firmware has no phone Range control yet (needs 0.9.18 or later).";
+    } else {
+      $("range-state").textContent = "Range needs pairing, like Messages. Enter the 6-digit code shown on the board's screen when your phone asks.";
+      $("range-retry").hidden = false;
+    }
+    log("Range unavailable: " + e.message);
+  }
+}
+
+$("r-start").addEventListener("click", () => { rIntDirty = false; rangeCmd(R_CMD.start, intervalValue()); });
+$("r-stop").addEventListener("click", () => rangeCmd(R_CMD.stop));
+$("r-minus").addEventListener("click", () => { rIntDirty = true; $("r-int").value = String(Number($("r-int").value || 0) - 5); intervalValue(); });
+$("r-plus").addEventListener("click", () => { rIntDirty = true; $("r-int").value = String(Number($("r-int").value || 0) + 5); intervalValue(); });
+$("r-int").addEventListener("input", () => { rIntDirty = true; });
+$("r-set").addEventListener("click", () => { rIntDirty = false; rangeCmd(R_CMD.interval, intervalValue()); });
+$("r-reply").addEventListener("change", (e) => rangeCmd(R_CMD.reply, e.target.checked ? 1 : 0));
+$("r-power").addEventListener("change", (e) => rangeCmd(R_CMD.power, Number(e.target.value)));
+$("r-pin").addEventListener("click", () => {
+  if (rState && rState.pinned) { rangeCmd(R_CMD.unpin); return; }
+  if (!lastFix) { log("Pin here needs a phone GPS fix first."); return; }
+  sendFix(true); setTimeout(() => rangeCmd(R_CMD.pin), 300);
+});
+$("r-mark").addEventListener("click", () => { rangeCmd(R_CMD.mark); log("MARK sent to the board."); });
+$("range-retry").addEventListener("click", () => { if (device && device.gatt.connected) connectRange(device.gatt); });
+
 // ---- keep the screen on (where supported) ----
 async function keepAwake() {
   try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } }
@@ -409,11 +626,14 @@ async function connectGatt() {
   pill("board", device.name || "Connected", "ok");
   log("Connected to " + (device.name || "board"));
   await connectChat(server);
+  await connectRange(server);
   sendFix(true);
 }
 
 async function onDisconnected() {
   locChar = null; chatSend = chatSync = null; setChatEnabled(false);
+  rangeCtrl = null; setRangeEnabled(false);
+  $("range-state").textContent = "Disconnected. Range will reload when the board reconnects.";
   $("chat-state").textContent = "Disconnected. Messages will resync when the board reconnects.";
   pill("board", "Disconnected", "bad");
   if (userDisconnect) return;
@@ -432,7 +652,7 @@ $("connect").addEventListener("click", async () => {
     startGps();       // ask for location in the same tap (needed on iPhone)
     device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }, { namePrefix: "LoRaMsg" }],
-      optionalServices: [SERVICE_UUID, CHAT_SVC_UUID]
+      optionalServices: [SERVICE_UUID, CHAT_SVC_UUID, RANGE_SVC_UUID]
     });
     device.addEventListener("gattserverdisconnected", onDisconnected);
     await connectGatt();
@@ -448,6 +668,8 @@ $("disconnect").addEventListener("click", () => {
   userDisconnect = true;
   if (device && device.gatt.connected) device.gatt.disconnect();
   device = null; locChar = null; chatSend = chatSync = null; setChatEnabled(false); stopGps();
+  rangeCtrl = null; setRangeEnabled(false);
+  $("range-state").textContent = "Connect to a board to control the coverage test (firmware 0.9.18 or later).";
   if (wakeLock) wakeLock.release();
   $("connect").hidden = false; $("disconnect").hidden = true;
   pill("board", "Not connected", "warn");

@@ -140,6 +140,14 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 let device = null, locChar = null, watchId = null, wakeLock = null;
 let lastFix = null, lastSentAt = 0, sentCount = 0, sending = false, userDisconnect = false;
 
+// Chrome allows one Bluetooth operation at a time; run them in order.
+let gattChain = Promise.resolve();
+function gatt(fn) {
+  const run = gattChain.then(fn, fn);
+  gattChain = run.catch(() => {});
+  return run;
+}
+
 function log(msg) {
   const t = new Date().toLocaleTimeString();
   const el = $("log");
@@ -203,8 +211,8 @@ async function sendFix(force = false) {
   sending = true;
   try {
     const data = encodeFix(lastFix);
-    if (locChar.writeValueWithoutResponse) await locChar.writeValueWithoutResponse(data);
-    else await locChar.writeValue(data);
+    const ch = locChar;
+    await gatt(() => ch.writeValueWithoutResponse ? ch.writeValueWithoutResponse(data) : ch.writeValue(data));
     lastSentAt = now; sentCount++;
     $("sent").textContent = sentCount;
     $("last").textContent = new Date(now).toLocaleTimeString();
@@ -329,7 +337,7 @@ async function sendChat(text) {
   pending.set(id, { text, failed: false, at: Date.now() });
   renderChat();
   try {
-    await chatSend.writeValue(buf);   // with response: the board confirms it queued it
+    const ch = chatSend; await gatt(() => ch.writeValue(buf));   // with response: the board confirms it queued it
     return true;
   } catch (e) {
     const p = pending.get(id); if (p) p.failed = true;
@@ -361,7 +369,7 @@ async function connectChat(server) {
     messages = new Map(); syncing = true;
     $("chat-state").textContent = "Loading messages from the board…";
     setChatEnabled(true);
-    await chatSync.writeValue(new Uint8Array([1]));
+    const sy = chatSync; await gatt(() => sy.writeValue(new Uint8Array([1])));
     setTimeout(() => { if (syncing) { syncing = false; renderChat(); } }, 5000);
   } catch (e) {
     chatSend = chatSync = null; setChatEnabled(false);
@@ -393,8 +401,8 @@ async function connectGatt() {
   } catch (e) { log("Status unavailable: " + e.message); }
   pill("board", device.name || "Connected", "ok");
   log("Connected to " + (device.name || "board"));
-  sendFix(true);
   await connectChat(server);
+  sendFix(true);
 }
 
 async function onDisconnected() {
